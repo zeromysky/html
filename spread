@@ -1,0 +1,432 @@
+---lib.py
+
+#coding=utf-8
+import sys
+reload(sys)
+sys.setdefaultencoding('utf-8')
+import urllib,urllib2,httplib
+import time,datetime,random
+from urlparse import urlparse
+import base64,json,re,subprocess
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase 
+from email.header import Header
+from email import encoders  
+import os.path 
+
+
+#邮箱验证
+def email_verify(email):
+	if len(email) > 7:
+		if re.match("^[\w\-\.]+@[\w\-\.]+[\.\w+]+$", email) != None:
+			return 1
+	return 0
+
+def http_get(url):
+	req = urllib2.Request(url)
+	req.add_header('User-Agent','Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/52.0.2743.82 Safari/537.36')
+	response = urllib2.urlopen(req)
+	html=response.read()
+	return html
+
+def down_file(task_id,url,save_dir='attach'):
+	data = http_get(url)
+	file_name = save_dir+"/"+str(task_id)+"-"+str(int(time.time()))+os.path.splitext(url)[1]
+	with open(file_name, "wb") as code:   
+		code.write(data)
+	return os.path.abspath('.')+"/"+file_name
+	pass
+
+def http_post(url,data=None,port=80,timeout=30):
+	if data:data = urllib.urlencode(data)
+	url_list = urlparse(url)
+	headers = {"Content-type": "application/x-www-form-urlencoded" , "Accept": "text/plain"}
+	conn = httplib.HTTPConnection(url_list.netloc,port,timeout)
+	conn.request(method="POST",url=url,body=data,headers = headers)
+	response = conn.getresponse()
+	res = response.read()
+	arr={}
+	try:
+		if res!=None and res.strip()!='':
+			arr = json.loads(res,encoding='utf-8')
+		else:
+			arr = None
+	except Exception, e:
+		print e
+	return arr
+	pass
+
+def addslashes(s):
+    d = {'"':'\\"', "'":"\\'", "\0":"\\\0", "\\":"\\\\"}
+    return ''.join(d.get(c, c) for c in s)
+
+#时间戳转日期
+def time_to_str(time_stamp=None,format='%Y-%m-%d %H:%M:%S'):
+    if time_stamp==None:
+        return time.strftime(format,time.localtime(time.time()))
+    else:
+        return time.strftime(format,time.localtime(time_stamp))
+
+#日期转时间戳
+def str_to_time(time_str,format='%Y-%m-%d %H:%M:%S'):
+    if time_str==None: return;
+    time.strptime(time_str, format)
+    s = time.mktime(time.strptime(time_str, format))
+    return int(s)
+
+def getSid():
+	return str(int(time.time())) + str(datetime.datetime.today().microsecond)[0:4] + str(random.randint(100000,999999))
+
+def ws_email(class_name,method_name,param=None):
+	if not class_name:raise Exception("class_name not empty")
+	if not method_name:raise Exception("method_name not empty")
+	# print class_name
+	# print method_name
+	# print param
+	return http_post(url,data=param,port=80,timeout=30);
+	pass
+
+#邮件发送
+def send_email_php(param):
+	if not isinstance(param,list):
+		raise Exception("param must be list")
+		pass
+	cmd = ['D:/xamp/php/php.exe','/send_email/spread.php']
+	cmd.extend(param) 
+	try:
+		p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+	except Exception, e:
+		print e.message
+
+	(stdoutput,erroutput) = p.communicate()
+	a = p.returncode
+	if stdoutput==None : stdoutput = ''
+	if erroutput==None : erroutput = ''
+
+	return [a,stdoutput,erroutput]
+	pass
+
+#发送邮件
+#[self.email_task_id,self.email_use_flag,_email,self.email_titile,self.email_content,self.email_attach]
+def send_email(param):
+	if not isinstance(param,dict):
+		raise Exception("param must be dict")
+		pass
+
+	username = 'use@163.com'
+	password = '123'
+	sender = "111<"+username+">"
+	from_email = username
+	to_email = param['_email']
+
+	
+	subject = param['email_titile']
+	mail_msg = param['email_content']
+	scode = getSid()
+	mail_msg += '<img src="http://wwww.baidu.com?sid='+str(scode)+'" style="display:none;" />'
+
+	# down_file('123','http://img105.job1001.com/upload/adminnew/2017-10-09/小.txt','attach')
+	files = param['email_attach'];
+
+	msg = MIMEMultipart()
+	msg['Subject'] = Header(subject, 'gbk')
+	msg['From'] = sender
+	msg['Sender'] = username
+	# msg['Message-ID'] = "<1651321651.0651321@mail.job1001.cn>"
+	msg['To'] = to_email
+
+	html_text = MIMEText(mail_msg, 'html', 'gbk') 
+	
+	msg.attach(html_text) 
+
+
+	email_title = param['email_titile']
+	email_content = mail_msg
+	email_use_flag = param['email_use_flag']
+	email_task_id = param['email_task_id']
+	email_checkcode = scode
+
+	#附件
+	if files:
+		for f in files.split(','): 
+			if not f : continue  
+			dir_f = down_file(param['email_task_id'],f)
+			part = MIMEBase('application', 'octet-stream') #'octet-stream': binary data   
+			part.set_payload(open(dir_f, 'rb').read())   
+			encoders.encode_base64(part)   
+			part.add_header('Content-Disposition', 'attachment; filename="%s"' % os.path.basename(dir_f))   
+			msg.attach(part)
+	
+	try:
+		client = smtplib.SMTP()
+		client.set_debuglevel(0)
+		client.connect('smtp.163.com',2525)
+		client.login(username, password)
+		print client.sendmail(from_email, to_email, msg.as_string());
+		client.quit()
+		print 'success'
+		
+		# 发送日志
+	except Exception, e:
+		print e.message
+		# 发送日志
+	else:
+		pass
+	finally:
+		pass
+
+	pass
+
+#输出
+def out(str):
+	print str
+	pass
+
+---spread.py
+
+#!/usr/bin/python
+#-*-coding:utf-8-*-
+import sys
+reload(sys)
+sys.setdefaultencoding('utf-8')
+
+import random,threading,time,os,re
+from Queue import Queue
+from lib import * 
+
+
+
+#获取发送的邮件
+def get_send_email(to_send_type,spread_id,url,send_num):
+
+	if to_send_type == 'other':
+		if url.strip() != "":url = url.replace(',','')
+		#手动导入
+		email = http_get(url)
+		email = email.split('\r\n')
+	else:
+		email = ws_email("email_spread","getEmailList",{"id":spread_id})
+
+	_num = 0;
+	_email = []
+	for x in email:
+		x = x.replace("'","")
+		x = x.replace("\"","")
+		x = x.replace(";","")
+		x = x.replace(",","")
+		x = str(x)
+		if x not in _email and email_verify(x)>0:
+			_email.append(x)
+			_num += 1
+		if _num>=send_num and send_num != 0:
+			break;
+
+	return _email
+
+#更新邮件任务状态
+def update_email_status(task_id=None,type='start'):
+	if task_id == None : return ;
+	task_id = str(task_id)
+	sql = ''
+	if type == 'start' : #发送中
+		sql = "UPDATE email_spread SET send_status='1',update_time='"+time_to_str()+"' WHERE id='"+task_id+"'"
+	elif type == 'over': #发送完成
+		sql = "UPDATE email_spread SET send_status='2',update_time='"+time_to_str()+"' WHERE id='"+task_id+"'"
+	elif type == 'pause': #已暂停
+		sql = "UPDATE email_spread SET send_status='4',update_time='"+time_to_str()+"' WHERE id='"+task_id+"'"
+	elif type == 'stop': #已取消
+		sql = "UPDATE email_spread SET send_status='6',update_time='"+time_to_str()+"' WHERE id='"+task_id+"'"
+
+
+	if sql != '' :
+		ws_email("email_spread","query",{"sql":sql})
+	out('update status  '+sql)
+	pass
+
+
+#邮件发送
+def deal_email_send(email_list):
+
+	out('new TASK start: '+email_list['email_task_id'])
+
+	#更新邮件任务
+	update_email_status(email_list['email_task_id'],'start')
+
+	emailProducer = Queue()
+
+	for x in email_list['email_list']:
+		_email = x.strip()
+		if _email!='' and _email!=None and _email!='null' and email_verify(_email)>0:
+			emailProducer.put(_email)
+		pass
+
+	#开启邮件发送线程
+	for x in xrange(1):
+		email_consumer = emailConsumer(emailProducer,email_list)
+		email_consumer.start()
+
+#继续发送
+def continue_email_send(queue,email_list):
+	out("task_id :"+email_list['email_task_id']+"-continue-")
+	#更新邮件任务
+	update_email_status(email_list['email_task_id'],'start')
+
+	#开启邮件发送线程
+	for x in xrange(2):
+		email_consumer = emailConsumer(queue,email_list)
+		email_consumer.start()
+
+
+class emailConsumer(threading.Thread):
+
+	def __init__(self,queue,email_list):
+		threading.Thread.__init__(self)
+		self.qdata          = queue
+		self.email_list     = email_list
+		self.email_task_id  = email_list['email_task_id']
+		self.email_titile   = email_list['email_titile']
+		self.email_use_flag = email_list['email_use_flag']
+		self.email_content  = email_list['email_content']
+		self.email_attach   = email_list['email_attach']
+
+	def run(self):
+
+		while not self.qdata.empty():
+			global email_task_all,stop_task_list
+			try:
+
+				if email_task_all[self.email_task_id]['status']==3:#暂停
+					break;
+				if email_task_all[self.email_task_id]['status']==5:#取消
+					self.qdata = Queue()
+					break;
+
+				_email = self.qdata.get(block=False)
+				
+				if _email:
+					# 邮件标示 邮箱 邮件标题 邮件内容 附件
+					# print 'email_use_flag',self.email_use_flag
+					# print 'email',_email
+					# print "email_titile",self.email_titile
+					# print "email_task_id",self.email_task_id
+					# print "email_content",self.email_content
+					# print "email_attach",self.email_attach
+					print _email
+					print send_email({'email_task_id':self.email_task_id,'email_use_flag':self.email_use_flag,"_email":_email,"email_titile":self.email_titile,"email_content":self.email_content,"email_attach":self.email_attach})
+					
+					pass
+				time.sleep(20) 
+				out(" task_id : "+self.email_task_id+" ["+_email+"]")
+			except Exception, e:
+				print e
+				if self.qdata.empty() :
+					update_email_status(self.email_task_id,'over')
+					out(" task_id "+self.email_task_id+" over Exception")
+					break
+			finally:
+
+				stop_task_list[self.email_task_id] = self.qdata
+
+				if self.qdata.empty() :
+					update_email_status(self.email_task_id,'over')
+					out(" task_id "+self.email_task_id+" over finally")
+
+			self.qdata.task_done()
+			time.sleep(10)
+
+
+if __name__ == '__main__':
+
+	#所有的邮件任务id和状态
+	email_task_all = {}
+	#邮件任务列表
+	email_task_list = []
+	#暂停的列表
+	stop_task_list = {}
+
+	while True:
+		email_spread_list = ws_email("email_spread","getObjectList",{"sql":"SELECT * FROM `email_spread` WHERE `send_status`!=1 AND `status`=1 AND `is_verify`=1"})
+		# print type(email_spread_list)
+
+		if isinstance(email_spread_list,list):
+			for x in email_spread_list:
+				#邮件任务ID
+				spread_id = str(x['id'])
+				#邮件标题
+				email_titile = x['email_titile']
+				#邮件内容
+				email_content = x['email_content']
+				#附件的路径
+				email_attach = x['email_attach']
+				#发送对象类型：company:公司 ， persion:人才 ， other:其他导入
+				to_send_type = x['to_send_type']
+				#用户自己导入的邮箱地址
+				to_email_path = x['to_email_path']
+				#发送类型 1：立刻发送 2：定时发送 
+				send_type = int(x['send_type'])
+				#定时发送时间戳
+				send_time = int(x['send_time'])
+				#发送状态 ： 0 未发送 1 发送完成 2 发送中 3 暂停 4 已暂停 5：取消 6：已取消 7：继续发送
+				send_status = int(x['send_status'])
+				#邮件标示
+				email_use_flag = 'spread_'+spread_id
+				#发送数量
+				send_num = int(x['send_num'])
+
+				nowTime = time.time()
+
+
+				#定时和发送
+				if send_type == 1 or ( send_type == 2 and send_time<nowTime ):
+
+					#未发的 继续发送
+					if send_status == 0 :
+
+						print "new-task:"+spread_id
+						email_task_all[spread_id] = {'email_task_id':spread_id,'status':1}
+
+						email_task_list.append({'email_task_id':spread_id,'email_list':get_send_email(to_send_type,spread_id,to_email_path,send_num),'status':1,'email_titile':email_titile,'email_use_flag':email_use_flag,'email_content':email_content,'email_attach':email_attach,'send_num':send_num})
+
+
+					#暂停
+					if send_status == 3 :
+						if email_task_all.has_key(spread_id) :
+							email_task_all[spread_id] = {'email_task_id':spread_id,'status':3}
+							time.sleep(5)
+							update_email_status(spread_id,type='pause')
+							out("--pause--")
+							out(stop_task_list)
+
+					#取消
+					if send_status == 5 :
+						if email_task_all.has_key(spread_id) :
+							email_task_all[spread_id] = {'email_task_id':spread_id,'status':5}
+							time.sleep(5)
+							update_email_status(spread_id,type='stop')
+							out('--over--')
+
+					#继续
+					if send_status == 7 :
+						if stop_task_list.has_key(spread_id) :
+							email_task_all[spread_id] = {'email_task_id':spread_id,'status':1}
+							out('--continue--')
+							continue_email_send(stop_task_list[spread_id],{'email_task_id':spread_id,'email_titile':email_titile,'email_use_flag':email_use_flag,'email_content':email_content,'email_attach':email_attach,'send_num':send_num})
+
+
+		while len(email_task_list)>0:
+			try:
+				email_list = email_task_list.pop()
+			except Exception, e:
+				print e
+				break
+
+			if email_list is not None:
+				deal_email_send(email_list);
+				# exit()
+				pass
+
+		print '-- sleep 30 --'
+		time.sleep(30)
+		pass

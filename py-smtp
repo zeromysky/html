@@ -1,0 +1,78 @@
+#coding=utf-8
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase 
+from email.header import Header
+from email import encoders  
+import urllib,urllib2,httplib,time
+import os.path 
+
+def http_get(url):
+	req = urllib2.Request(url)
+	req.add_header('User-Agent','Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/52.0.2743.82 Safari/537.36')
+	response = urllib2.urlopen(req)
+	html=response.read()
+	return html
+
+def down_file(task_id,url,save_dir='attach'):
+	data = http_get(url)
+	file_name = save_dir+"/"+str(task_id)+"-"+str(int(time.time()))+"-"+unicode(os.path.split(url)[1],'utf-8',errors='ignore')
+	with open(file_name, "wb") as code:   
+		code.write(data)
+	return os.path.abspath('.')+"/"+file_name
+	pass
+
+username = '111@163.com'
+password = '123456'
+sender = "小<"+username+">"
+from_email = username
+to_email = ','.join(['2770503648@qq.com'])
+
+# email.Message.Message()
+
+# 如名字所示： Multipart就是多个部分
+
+subject = '你好' 
+mail_msg = """
+<h1>ok</h1>
+""" 
+
+# down_file('123','http://img105.job1001.com/upload/adminnew/2017-10-09/小.txt','attach')
+
+files = ['http://www.baidu.com/1507541793-PUL8YCP.txt','http://www.baidu.com/1507606953-510FNQV.png','http://www.baidu.com/1507606993-FQTY08W.pdf','http://www.baidu.com/1507607049-TDGFRKX.doc','http://www.baidu.com/1507607082-X586T18.zip']
+
+msg = MIMEMultipart()
+msg['Subject'] = Header(subject, 'utf-8')
+msg['From'] = sender
+msg['Sender'] = "111@163.com"
+# msg['Message-ID'] = "<1651321651.0651321@mail.job1001.cn>"
+msg['To'] = to_email
+
+html_text = MIMEText(mail_msg, 'html', 'utf-8') 
+msg.attach(html_text) 
+
+#附件
+for f in files:   
+	dir_f = down_file('456',f)
+	part = MIMEBase('application', 'octet-stream') #'octet-stream': binary data   
+	part.set_payload(open(dir_f, 'rb').read())   
+	encoders.encode_base64(part)   
+	part.add_header('Content-Disposition', 'attachment; filename="%s"' % os.path.basename(dir_f))   
+	msg.attach(part)
+try:
+	client = smtplib.SMTP()
+	client.set_debuglevel(1)
+	client.connect('smtp.163.com',25)
+	client.login(username, password)
+
+	print client.sendmail(from_email, to_email, msg.as_string());
+	client.quit()
+	print 'success'
+except Exception, e:
+	print e
+else:
+	pass
+finally:
+	pass
+

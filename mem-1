@@ -1,0 +1,221 @@
+
+memcached的集群代理，备份机制。一致性hash，平滑添加memcached https://github.com/wangmh/memagent
+
+http://www.bubuko.com/infodetail-1284158.html
+http://www.cnblogs.com/zhoujinyi/p/5554083.html
+
+# /usr/local/bin/memcached -d -m 10 -u root -l 192.168.0.200 -p 12000 -c 256 -P /tmp/memcached.pid
+# kill `cat /tmp/memcached.pid`
+-d选项是启动一个守护进程， 
+-m是分配给Memcache使用的内存数量，单位是MB，我这里是10MB， 
+-u是运行Memcache的用户，我这里是root， 
+-l是监听的服务器IP地址，如果有多个地址的话，我这里指定了服务器的IP地址192.168.0.200， 
+-p是设置Memcache监听的端口，我这里设置了12000，最好是1024以上的端口， 
+-c选项是最大运行的并发连接数，默认是1024，我这里设置了256，按照你服务器的负载量来设定， 
+-P是设置保存Memcache的pid文件，我这里是保存在 /tmp/memcached.pid，
+
+一致性Hash算法的目的有两点：一是节点变动后其他节点受影响尽可能小；二是节点变动后数据重新分配尽可能均衡 。
+
+很显然，factor越小，chunk匹配得就越精准，但是slab组就会分得越多，而产生LRU的机会也会增加，factor越大，分组就越少，产生LRU的机会就越小，但是chunk匹配精准度会有所下降，如在数据大小为130B时，如果f=1.25，mc会将其放入class3(chunk size = 144B),浪费的空间为14B；如果f=2.0，mc会将其放入class2(class size = 256)中,浪费的空间为126B，相当惊人，所以factor的大小设置在一个比较平衡的值，一般以默认的1.25较为理想。
+
+在使用memcached中key的约定和命名规范
+
+	这里给大家做一下总结：
+
+	第一种：一般都是公司的项目名称+字符常量+返回PO的id（或者唯一标示都可以）
+
+	第二种：可以用spring aop来拦截你要缓存的service，通过类名+方法名+参数名，来做到key值得唯一
+
+	第三种：用你的sql语句+id（或者查询条件）
+
+	其中第一种比较灵活你可以嵌入到你service的代码中，下面写一段伪代码：
+
+	    String key = "taobao"+"cat"+catAll  
+	    Object o = getKey(key);  
+	    if(o==null){  
+	        //查询你的数据库操作   
+	       cat  c = catService.findAll();  
+	      setKey(key,c);//set到memcached中   
+	      return c;//返回结果   
+	    }else{  
+	      return (Cat)c;//返回结果   
+	    }  
+
+	但是是嵌入到你service层，就会破坏你service的业务逻辑，耦合性高，这里我们老大提出了解决方法，就是可以在你service和action中间在加一层来做缓存处理，这样似乎可以降低耦合。
+	第二种适用于分模块开发 ，因为调用的都是同一个类中的方法，但是拦截器也是回影响性能的，但是开发效率会提高的，还有就是不会破坏你的service的业务逻辑。
+
+	第三种 个人觉得不是很好 ，因为sql语句要是很长得话，也是会占用一部分内存的。
+
+	客户端语言包括 Java、Perl、PHP 等，都能串行化语言对象以便存储在 memcached 内，大家可以google一下他的客户端来做自己的实验。
+
+
+
+
+magent是一款开源的Memcached代理服务器软件，其项目网址为：
+
+http://code.google.com/p/memagent/
+
+一、安装步骤：
+　　1、编译安装libevent：
+	wget http://monkey.org/~provos/libevent-1.4.9-stable.tar.gz
+	tar zxvf libevent-1.4.9-stable.tar.gz
+	cd libevent-1.4.9-stable/
+	./configure --prefix=/usr
+	make && make install
+	cd ../
+
+
+　　2、编译安装Memcached：
+	wget http://danga.com/memcached/dist/memcached-1.2.6.tar.gz
+	tar zxvf memcached-1.2.6.tar.gz
+	cd memcached-1.2.6/
+	./configure --with-libevent=/usr
+	make && make install
+	cd ../
+
+
+　　3、编译安装magent：
+	mkdir magent
+	cd magent/
+	wget http://memagent.googlecode.com/files/magent-0.5.tar.gz
+	tar zxvf magent-0.5.tar.gz
+	/sbin/ldconfig
+	sed -i "s#LIBS = -levent#LIBS = -levent -lm#g" Makefile
+	make
+	cp magent /usr/bin/magent
+	cd ../
+
+
+
+　　二、使用实例：
+	memcached -m 1 -u root -d -l 127.0.0.1 -p 11211
+	memcached -m 1 -u root -d -l 127.0.0.1 -p 11212
+	memcached -m 1 -u root -d -l 127.0.0.1 -p 11213
+	magent -u root -n 51200 -l 127.0.0.1 -p 12000 -s 127.0.0.1:11211 -s 127.0.0.1:11212 -b 127.0.0.1:11213
+
+　　1、分别在11211、11212、11213端口启动3个Memcached进程，在12000端口开启magent代理程序；
+　　2、11211、11212端口为主Memcached，11213端口为备份Memcached；
+　　3、连接上12000的magent，set key1和set key2，根据哈希算法，key1被写入11212和11213端口的Memcached，key2被写入11212和11213端口的Memcached；
+　　4、当11211、11212端口的Memcached死掉，连接到12000端口的magent取数据，数据会从11213端口的Memcached取出；
+　 　5、当11211、11212端口的Memcached重启复活，连接到12000端口，magent会从11211或11212端口的 Memcached取数据，由于这两台Memcached重启后无数据，因此magent取得的将是空值，尽管11213端口的Memcached还有数 据（此问题尚待改进）。
+
+
+　　三、整个测试流程：
+	[root@centos52 ~]# telnet 127.0.0.1 12000
+	Trying 127.0.0.1...
+	Connected to 127.0.0.1.
+	Escape character is '^]'.
+	stats
+	memcached agent v0.4
+	matrix 1 -> 127.0.0.1:11211, pool size 0
+	matrix 2 -> 127.0.0.1:11212, pool size 0
+	END
+	set key1 0 0 8
+	zhangyan
+	STORED
+	set key2 0 0 8
+	zhangyan
+	STORED
+	quit
+	Connection closed by foreign host.
+
+
+	[root@centos52 ~]# telnet 127.0.0.1 11211
+	Trying 127.0.0.1...
+	Connected to 127.0.0.1.
+	Escape character is '^]'.
+	get key1
+	END
+	get key2
+	VALUE key2 0 8
+	zhangyan
+	END
+	quit
+	Connection closed by foreign host.
+
+
+	[root@centos52 ~]# telnet 127.0.0.1 11212
+	Trying 127.0.0.1...
+	Connected to 127.0.0.1.
+	Escape character is '^]'.
+	get key1
+	VALUE key1 0 8
+	zhangyan
+	END
+	get key2
+	END
+	quit
+	Connection closed by foreign host.
+
+
+	[root@centos52 ~]# telnet 127.0.0.1 11213
+	Trying 127.0.0.1...
+	Connected to 127.0.0.1.
+	Escape character is '^]'.
+	get key1
+	VALUE key1 0 8
+	zhangyan
+	END
+	get key2
+	VALUE key2 0 8
+	zhangyan
+	END
+	quit
+	Connection closed by foreign host.
+
+
+	模拟11211、11212端口的Memcached死掉
+	[root@centos52 ~]# ps -ef | grep memcached
+	root      6589     1  0 01:25 ?        00:00:00 memcached -m 1 -u root -d -l 127.0.0.1 -p 11211
+	root      6591     1  0 01:25 ?        00:00:00 memcached -m 1 -u root -d -l 127.0.0.1 -p 11212
+	root      6593     1  0 01:25 ?        00:00:00 memcached -m 1 -u root -d -l 127.0.0.1 -p 11213
+	root      6609  6509  0 01:44 pts/0    00:00:00 grep memcached
+	[root@centos52 ~]# kill -9 6589
+	[root@centos52 ~]# kill -9 6591
+	[root@centos52 ~]# telnet 127.0.0.1 12000
+	Trying 127.0.0.1...
+	Connected to 127.0.0.1.
+	Escape character is '^]'.
+	get key1
+	VALUE key1 0 8
+	zhangyan
+	END
+	get key2
+	VALUE key2 0 8
+	zhangyan
+	END
+	quit
+	Connection closed by foreign host.
+
+
+	模拟11211、11212端口的Memcached重启复活
+	[root@centos52 ~]# memcached -m 1 -u root -d -l 127.0.0.1 -p 11211
+	[root@centos52 ~]# memcached -m 1 -u root -d -l 127.0.0.1 -p 11212
+	[root@centos52 ~]# telnet 127.0.0.1 12000
+	Trying 127.0.0.1...
+	Connected to 127.0.0.1.
+	Escape character is '^]'.
+	get key1
+	END
+	get key2
+	END
+	quit
+	Connection closed by foreign host.
+
+
+18、memcached能接受的key的最大长度是多少？
+
+
+memcached能接受的key的最大长度是250个字符。需要注意的是，250是memcached服务器端内部的限制。如果使用的Memcached客户端支持"key的前缀"或类似特性，那么key（前缀+原始key）的最大长度是可以超过250个字符的。推荐使用较短的key，这样可以节省内存和带宽。
+
+
+19、memcached对item的过期时间有什么限制？
+
+
+item对象的过期时间最长可以达到30天。memcached把传入的过期时间（时间段）解释成时间点后，一旦到了这个时间点，memcached就把item置为失效状态，这是一个简单但obscure的机制。
+
+
+20、memcached最大能存储多大的单个item？
+
+
+memcached最大能存储1MB的单个item。如果需要被缓存的数据大于1MB，可以考虑在客户端压缩或拆分到多个key中。

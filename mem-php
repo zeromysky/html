@@ -1,0 +1,110 @@
+<?php
+
+// memcache-blog
+// http://blog.csdn.net/wusuopubupt/article/details/9128431
+// php-memcache
+// http://blog.csdn.net/nuli888/article/details/52128606
+
+第一种：使用memcahe扩展时如果想应用一致性Hash算法
+
+修改php.ini添加：
+
+[Memcache] 
+Memcache.allow_failover = 1 
+Memcache.hash_strategy =consistent 
+Memcache.hash_function =crc32 
+ini_set方法： 
+Ini_set(‘memcache.hash_strategy',' consistent '); 
+Ini_set(‘memcache.hash_function','crc32'); 
+
+
+第二种：使用memcached扩展时如果想应用一致性Hash算法使用setOption方法
+
+
+$mem = new Memcached();  
+$mem->setOption(Memcached::OPT_HASH, Memcached::HASH_CRC);  
+$mem->setOption(Memcached::OPT_DISTRIBUTION, Memcached::DISTRIBUTION_CONSISTENT);  
+$servers = array(  
+  array('192.168.20.193', 11211, 33),  
+  array('192.168.20.194', 11211, 67)  
+);  
+$mem->addServers($servers);  
+  
+print_r($mem->get('str_key'));  
+echo '<br/>';  
+print_r($mem->get('num_key'));  
+echo '<br/>';  
+print_r($mem->get('obj_key'));  
+echo '<br/>';  
+print_r($mem->get('arr_key'));  
+echo '<br/>';  
+
+
+
+第三种：php代码实现，需要借助flexihash.php
+
+ 
+require_once 'flexihash.php';  
+Class FMemcache {  
+    public $hash = null;  
+    public $memcache = null;  
+    public $connectPool = null;  
+    public function __construct() {  
+        $this->hash = new Flexihash();  
+    }  
+    public function addServers($servers) {  
+        foreach ($servers as $server) {  
+            $node = $server['host'] . ':' . $server['port'];  
+            $this->connectPool[$node] = false;  
+            $targets[] = $node;  
+        }  
+        $this->hash->addTargets($targets);  
+    }  
+    public function set($key, $value) {  
+        $nodes = $this->hash->lookupList($key, count($this->connectPool));  
+        foreach ($nodes as $node) {  
+            if (!$this->connectPool[$node]) {  
+                $server = explode(':', $node);  
+                $this->connectPool[$node] = @memcache_connect($server[0], $server[1]);  
+            }  
+            if ($this->connectPool[$node]) {  
+                if (memcache_set($this->connectPool[$node], $key, $value)) {  
+                    return true;  
+                }  
+            }  
+        }  
+        return false;  
+    }  
+    public function get($key) {  
+        $nodes = $this->hash->lookupList($key, count($this->connectPool));  
+        foreach ($nodes as $node) {  
+            if (!$this->connectPool[$node]) {  
+                $server = explode(':', $node);  
+                $this->connectPool[$node] = @memcache_connect($server[0], $server[1]);  
+            }  
+            if ($this->connectPool[$node]) {  
+                return memcache_get($this->connectPool[$node], $key);//直接返回  
+            }  
+        }  
+        return false;  
+    }  
+}  
+  
+//测试  
+$mem = new FMemcache();  
+$servers = array(array('host' => '192.168.20.193', 'port' => 11211), array('host' => '192.168.20.194', 'port' => 11211));  
+$mem->addServers($servers);  
+$mem->set("str_key", "love中国");  
+$mem->set("num_key", 123);  
+$object = new StdClass;  
+$object->attribute = 'test';  
+$mem->set("obj_key", $object);  
+$array = Array('assoc' => 123, 345, 567);  
+$mem->set("arr_key", $array);  
+print_r($mem->get('str_key'));  
+echo '<br/>';  
+print_r($mem->get('num_key'));  
+echo '<br/>';  
+print_r($mem->get('obj_key'));  
+echo '<br/>';  
+print_r($mem->get('arr_key'));  

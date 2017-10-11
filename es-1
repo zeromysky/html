@@ -1,0 +1,378 @@
+<?php
+set_time_limit(0);
+#索引 => 数据库 一个文档中的每一个属性都是 被索引 的（有一个倒排索引）和可搜索的。
+#索引在默认情况下会被分配5个主分片 和一份副本
+/*
+{
+   "settings" : {
+      "number_of_shards" : 3,
+      "number_of_replicas" : 1
+   }
+}
+*/
+#类型 => 表  字段 mapping
+	// 字符串	string
+	// 整数 	number	byte, short, integer, long
+	// 浮点数 point	float, double
+	// 布尔型	boolean
+	// 日期		date
+#动态映射猜测字段类型
+	// Boolean:			 	true or false	"boolean"
+	// Whole number: 		123				"long"
+	// Floating point: 		123.45			"double"
+	// String, 				valid date: 	"2014-09-15"	"date"
+	// String: 				"foo bar"		"string"
+
+#####查看映射的命令 : GET /索引名称/_mapping/索引类型.
+
+/*
+{
+    "tag": {
+        "type":     "string",
+        "index":    "not_analyzed"
+    }
+}
+
+对于string字段，两个最重要的映射参数是index和analyer。
+index 参数控制字符串以何种方式被索引。它包含以下三个值当中的一个：
+
+1 analyzed		首先分析这个字符串，然后索引。换言之，以全文形式索引此字段。
+2 not_analyzed	索引这个字段，使之可以被搜索，但是索引内容和指定值一样。不分析此字段。
+3 no			不索引这个字段。这个字段不能为搜索到。
+
+其他简单类型（long、double、date等等）
+也接受index参数，但相应的值只能是no和not_analyzed，它们的值不能被分析。
+
+*/
+/*
+{
+    "tweet": {
+        "type":     "string",
+        "analyzer": "english"
+    }
+}
+内置了很多分词器（analyzers），例如standard （标准分词器）、
+english （英文分词）和chinese （中文分词）。
+其中standard 就是无脑的一个一个词（汉字）切分，所以适用范围广，但是精准度低；
+english 对英文更加智能，可以识别单数负数，大小写，过滤stopwords（例如“the”这个词）等；
+chinese 效果很差，
+
+*/
+#####映射 可以添加 不能修改 可以删除
+
+// 多值字段
+// { "tag": [ "search", "nosql" ]}
+// 数组中所有值必须为同一类型
+// 不能把日期和字符窜混合
+
+/*
+
+这四个字段将被识别为空字段而不被索引：
+
+"empty_string":             "",
+"null_value":               null,
+"empty_array":              [],
+"array_with_null_value":    [ null ]
+
+*/
+
+#创建 索引 => 库
+// $url = "http://192.168.60.164:9200/web?pretty";
+// post($url);
+
+#创建 表 
+//     $url = 'http://192.168.50.211:9200/test100/acticle5/_mapping?pretty';
+//     $data = ' 
+//     {
+//         "acticle5": {
+//                 "properties": {
+//                     "id": {
+//                         "type": "integer"
+//                     },
+//                     "title": {
+//                         "type": "string",
+//                         "store": "yes"
+//                     },
+//                     "description": {
+//                         "type": "string",
+//                         "index": "not_analyzed"
+//                     },
+//                     "content2": {
+//                        "search_analyzer": "query_ansj",
+// "analyzer": "index_ansj",
+// "type": "string"
+//                     },
+//                     "status": {
+//                         "type": "integer"
+//                     },
+//                     "add_time": {
+//                         "type": "date"
+//                     }
+//                 }
+//             }
+//      }
+//     ';
+//     post($url,$data);
+#查看 
+// $url = 'http://192.168.60.164:9200/web/_mapping?pretty';
+// get($url);
+
+#增加 字段
+// $url = 'http://192.168.60.164:9200/web/acticle/_mapping?pretty';
+// $data = '{
+//      "acticle": {
+//                 "properties": {
+//                     "ctime":{
+//                         "type":"date",
+//                         "format": "yyyy-MM-dd HH:mm:ss"
+//                    }
+//                 }
+//         }
+// }';
+// var_dump(json_decode($data));
+// post($url,$data);
+
+#修改 字段
+// 1.如果要推到现有的映射,你得重新建立一个索引.然后重新定义映射
+// 2.然后把之前索引里的数据导入到新的索引里
+// -------具体方法------
+// 1.给现有的索引定义一个别名,并且把现有的索引指向这个别名,运行步骤2
+// 2.运行: PUT /现有索引/_alias/别名A
+// 3.新创建一个索引,定义好最新的映射
+// 4.将别名指向新的索引.并且取消之前索引的执行,运行步骤5
+// 5.运行: POST /_aliases
+//         {
+//             "actions":[
+//                 {"remove"    :    {    "index":    "现有索引名".    "alias":"别名A"    }}.
+//                 {"add"        :    {    "index":    "新建索引名",    "alias":"别名A"    }}
+//             ]
+//         }
+// 注意:通过这几个步骤就实现了索引的平滑过渡,并且是零停机
+
+
+
+#【别名】
+// elasticsearch中的API可以接受一个对应于某个索引的索引名，也可以接受多个索引。
+// 索引别名API允许使用一个名字来作为一个索引的别名，所有的API会将别名转化成最终的索引名。
+// 一个也可以被映射到多于一个的索引上，当指定这个别名的时候，别名将会自动地扩展到别名的所有的索引上。
+// 一个别名也可以与一个过滤器建立关联，这个过滤器在搜索和路由值的时候自动被应用。
+
+#添加
+// $url = 'http://192.168.60.164:9200/_aliases';
+// $data = '{
+//         "actions": [
+//             {"add": {"index": "web", "alias":"web_v1"}}
+//         ]
+// }';
+// post($url,$data);
+
+#删除
+// $url = 'http://192.168.60.164:9200/_aliases';
+// $data = '{
+//     "actions": [
+//         {"remove": {"index": "web", "alias": "web_v1"}}
+//     ]
+// }';
+// post($url,$data);
+
+#修改
+// $url = 'http://192.168.60.164:9200/_aliases';
+// $data = '{
+//     "actions": [
+//         {"remove": {"index": "web", "alias": "web_v1"}},
+//         {"add": {"index":"web", "alias": "web_v2"}}
+//     ]
+// }';
+// post($url,$data);
+
+
+####添加记录
+// for ($i=20; $i < 30; $i++) { 
+//     $url = 'http://192.168.50.211:9200/test100/acticle5/'.$i;
+//     // $data = '{
+//     //     "title":"你好'.$i.'",
+//     //     "description":"你好2",
+//     //     "content":"你好3",
+//     //     "status":1,
+//     //     "add_time":"2017-06-27",
+//     //     "ctime":"'.date('Y-m-d H:i:s').'",
+//     //     "other":"123456"
+//     // }';
+//     $data = '{
+//         "id":'.$i.',
+//         "title":"人民'.$i.'",
+//         "description":"人民'.$i.'",
+//         "content2":"人民'.$i.'",
+//         "status":1,
+//         "add_time":"2017-06-27"
+//     }';
+//     post($url,$data);
+
+// }
+
+
+
+
+#完全查询
+// scan 不排序
+// scroll 排序
+
+// scroll=1m 1 分钟
+// $url = 'http://192.168.60.164:9200/web/acticle/_search?search_type=scan&scroll=1m';
+// $data = '{
+//     "query": { "match_all": {}}
+// }';
+
+// $arr = get($url,$data);
+// $scroll_id = $arr->_scroll_id;
+// var_dump($scroll_id);
+
+// //上面的scroll_id 
+// //数据量很多时候 使用，每请求一下，会返回下一批数据。
+// $scroll_id = 'c2Nhbjs1OzY4NjpZdkZmZU1xelRuYV92X0lpYktZUzVnOzY4Njp5RzdOakd4WFNjYWNkc1hsblh1aml3OzY4ODp5RzdOakd4WFNjYWNkc1hsblh1aml3OzY4Nzp5RzdOakd4WFNjYWNkc1hsblh1aml3OzY4NzpZdkZmZU1xelRuYV92X0lpYktZUzVnOzE7dG90YWxfaGl0czo4NDE7';
+
+// $url = "http://192.168.60.164:9200/_search/scroll";
+// $data = '{
+//     "scroll":"1m", 
+//     "scroll_id":"'.$scroll_id.'"
+// }';
+
+// get($url,$data);
+
+
+// $url = "http://".$es_type_url."_search?search_type=scan&scroll=1m";
+
+// $res = post($url,$param_json);
+
+// $scroll_id = $res['_scroll_id'];
+
+// $url_arr = parse_url($url);
+
+
+// $cacheDir = "/dir/";
+// @mk_dir($cacheDir);
+// $path = $cacheDir.$email_spread_id.'.txt';
+// @unlink($path);
+// @file_put_contents($path, '');
+
+// $i=1;
+// do {
+
+//     $url = "http://".$url_arr['host'].":".$url_arr['port']."/_search/scroll?search_type=scan&scroll=1m&pretty&scroll_id=$scroll_id";
+
+//     $resList = post($url);
+
+//     // dump($resList['hits']['hits']);
+//     if(empty($email_arr)){
+//         $email_arr = array();
+//     }
+    
+//     foreach ($resList['hits']['hits'] as $info) {
+//         $email_arr[$info['_source']['email']] = $info['_source']['email'];
+//     }
+
+//     $i ++;
+
+//     out($i);
+
+//     if(!empty($email_arr) && ( count($email_arr)>1000 || empty($resList['hits']['hits']) ) ){
+//         file_put_contents($path,"\n".implode("\n", $email_arr),FILE_APPEND);
+//         $email_arr = array();
+//         out('ok');
+//     }
+
+// } while (!empty($resList['hits']['hits']));
+
+
+
+
+
+#修改记录
+
+
+$url = "http://192.168.50.211:9200/test100/acticle5/27/";
+$data = '{"content2":"人民24"}';
+$arr = to_curl($url,$data);
+var_dump($arr);
+
+#删除
+// $url = 'http://192.168.60.164:9200/web_v2/acticle/你好';
+// get($target);
+
+
+
+// http://192.168.50.211:9200/test100/acticle4/  get
+
+
+// _search?q=content2:人民3
+
+
+
+function get($target,$data=array()){
+	return to_curl($target,$data,'GET');
+}
+
+function post($target,$data=array()){
+	return to_curl($data,$target);
+}
+
+function del($target,$data=array()){
+    return to_curl($target,$data,'DELETE');
+}
+function put($target,$data=array()){
+    return to_curl($target,$data,'PUT');
+}
+
+function to_curl($target,$data=array(),$method='POST'){
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER,1);
+    curl_setopt($ch, CURLOPT_URL,$target);
+    if($method=='POST'){
+    	curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST');
+    }
+    if(!empty($data)){
+    	curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+    }
+    curl_setopt($ch,CURLOPT_USERAGENT,"Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/43.0.2357.124 Safari/537.36"); 
+    curl_setopt($ch, CURLOPT_TIMEOUT,30);
+    $result = curl_exec($ch);
+    $result = json_decode($result);
+    dump($result);
+    curl_close($ch);
+    return $result;
+}
+
+function post2($data, $target) {
+    $url_info = parse_url($target);
+    $httpheader  = "POST " . $url_info['path'] . " HTTP/1.0\r\n";
+    $httpheader .= "Host:" . $url_info['host'] . "\r\n";
+    $httpheader .= "Content-Type:application/x-www-form-urlencoded\r\n";
+    $httpheader .= "Content-Length:" . strlen($data) . "\r\n";
+    $httpheader .= "Connection:close\r\n\r\n";
+    $httpheader .= $data;
+    
+    $port = isset($url_info['port']) ? $url_info['port'] : 9200;
+    $fd   = @fsockopen($url_info['host'], $port, $errno, $errstr, 1);
+    $gets = "";
+    echo $errstr;
+    if (!$fd) {
+        $gets = '{"status":500, "msg":"' . $errstr . '", "code": ' . $errno . '}';
+    }else{
+        fwrite($fd, $httpheader);
+        while(!feof($fd)) {
+            $gets .= fread($fd, 128);
+        }
+        fclose($fd);
+        $gets=substr($gets, strpos($gets, "\r\n\r\n") + 4);
+        $gets=trim($gets);
+    }
+    return $gets;
+}
+
+
+function dump($var){
+	echo "<pre>";
+	var_dump($var);
+	echo "</pre>";
+}

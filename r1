@@ -1,0 +1,349 @@
+<?php
+
+/**
+ * redis
+ * https://github.com/owlient/phpredis api
+ * http://blog.csdn.net/zxjiayou1314/article/details/52187848
+ * http://blog.csdn.net/zdw19861127/article/details/73089386
+ * http://www.cnblogs.com/catcrazy/p/6415802.html
+ * 误删恢复 http://blog.csdn.net/qq_25551295/article/details/48103245
+ */
+
+$redis = new Redis();
+$redis->connect('127.0.0.1', 6379,1);
+dump($redis);
+/*类别*/
+// dump(Redis::REDIS_STRING);
+// dump(Redis::REDIS_SET);
+// dump(Redis::REDIS_LIST);
+// dump(Redis::REDIS_ZSET);
+// dump(Redis::REDIS_HASH);
+// dump(Redis::REDIS_NOT_FOUND);
+/*验证*/
+$redis->auth('foobared');
+
+
+/*字符串*/
+//单个
+$redis->set("key","1");
+$redis->get("key");
+
+//多个
+$array_mset=array('first_key'=>'first_val',
+          'second_key'=>'second_val',
+          'third_key'=>'third_val');
+$redis->mset($array_mset);
+
+$array_mget=array('first_key','second_key','third_key');
+// dump($redis->mget($array_mget));
+
+/*通用删除 返回删除数量 没有 为 0*/
+$redis->del('key');
+$redis->del($array_mget);
+
+###EXISTS
+//判断是否存在
+$redis->exists('key');
+//清空所有数据库key
+// $redis->FLUSHALL();
+//删除当前数据库所有key
+// $redis->flushdb();
+
+//key 的查找
+$array_mset_keys=array('one'=>'1',
+          'two'=>'2',
+          'three '=>'3',
+          'four'=>'4');
+#用MSET一次储存多个值
+$redis->mset($array_mset_keys); 
+// //array(3) { [0]=> string(4) "four" [1]=> string(3) "two" [2]=> string(3) "one" }
+// dump($redis->keys('*o*')); 
+// //array(1) { [0]=> string(3) "two" }
+// dump($redis->keys('t??')); 
+// //array(1) { [0]=> string(3) "two" }
+// dump($redis->keys('t[w]*'));
+// //Array ( [0] => four [1] => three [2] => two [3] => one )
+// dump($redis->keys('*')); 
+
+// $redis->flushdb();
+//随即返回一个key 
+$array_mset_randomkey=array('fruit'=>'apple',
+                'drink'=>'beer',
+                'food'=>'cookis');
+$redis->mset($array_mset_randomkey);
+// dump($redis->randomkey());
+
+###TTL 查看KEY 的时长 EXPIRE  设置生存时间
+
+$redis->set('name','ikodota'); # 设置一个key
+// $redis->expire('name',30);  # 设置生存时间为30秒 //return (integer) 1
+dump($redis->get('name')); //return ikodota
+dump($redis->ttl('name')); //(integer) 25
+
+
+###MOVE
+$redis->SELECT(0);  # 使用数据库0
+$redis->set('favorite_fruit',"banana");
+
+dump($redis->MOVE('favorite_fruit', 1)); 
+$redis->SELECT(1); 
+dump($redis->get('favorite_fruit'));
+
+###RENAME 会覆盖
+
+$redis->set('message',"hello world");
+dump($redis->rename('message','greeting'));
+dump($redis->get("greeting"));
+
+###RENAMENX 不会覆盖
+$redis->set('animal',"bear");
+$redis->set('favorite_animal', "butterfly");
+// bool(false)
+dump($redis->renamenx('animal', 'favorite_animal'));
+
+####TYPE
+dump($redis->type('animal')); 
+
+####EXPIREAT 设置有效时间戳
+$redis->SET('cache','www.google.com');
+$redis->EXPIREAT('cache',time()+20);
+
+dump ($redis->TTL('cache')); //return 124345085
+####PERSIST 移除给定key的生存时间。成功 1 如果key不存在或key没有设置生存时间，返回0。
+$redis->PERSIST('cache');  # 移除生存时间
+
+dump ($redis->TTL('cache'));
+
+####SORT 排序，分页,join等
+// array(
+// 'get' => 'some_other_pattern_*' or an array of patterns,获取的字段 array('#','user_name_*','user_password_*')
+// 'by' => 'some_pattern_*', 通过该索引排序，填写不存在的key 就 不排序了
+// 'sort' => 'asc' or 'desc',
+// 'limit' => array(0, 1), //LIMIT修饰符接受两个参数：offset和count。
+// 'alpha' => TRUE, //按字符排序
+// 'store' => 'external-key'
+// )
+
+//"GET #"，用于获取被排序对象(我们这里的例子是user_id)的当前元素。
+//'BY'=>'*->serial' 
+//符号"->"用于分割哈希表的关键字(key name)和索引域(hash field)，格式为"key->field"。
+//除此之外，哈希表的BY和GET操作和上面介绍的其他数据结构(列表、集合、有序集合)没有什么不同。
+// //$redis->FLUSHALL();
+// # admin
+// $redis->LPUSH('user_id', 1);
+// $redis->SET('user_name_1', 'admin');
+// $redis->SET('user_level_1',9999);
+
+// # huangz
+// $redis->LPUSH('user_id', 2);
+// $redis->SET('user_name_2', 'huangz');
+// $redis->SET('user_level_2', 10);
+
+// # jack
+// $redis->LPUSH('user_id', 59230);
+// $redis->SET('user_name_59230','jack');
+// $redis->SET('user_level_59230', 3);
+
+// # hacker
+// $redis->LPUSH('user_id', 222);  
+// $redis->SET('user_name_222', 'hacker');
+// $redis->SET('user_level_222', 9999);
+
+// $redis->SET('user_password_222', "hey,im in");
+// $redis->SET('user_password_1', "a_long_long_password");
+// $redis->SET('user_password_2', "nobodyknows");
+// $redis->SET('user_password_59230', "jack201022");
+
+// $redis_sort_option=array('BY'=>'user_level_*',
+//             'SORT'=>'DESC',
+//             'GET'=>array('user_name_*',"user_password_*")
+//             );
+// dump($redis->SORT('user_id',$redis_sort_option));
+// // $redis->FLUSHALL();
+
+
+/*string*/
+// set 是会覆盖的
+$redis->lpush('greet_list', "hello");  # 建立一个列表 #(integer) 1 //int(1)
+$redis->type('greet_list');#list //int(3)
+
+$redis->set('greet_list', "yooooooooooooooooo");   # 覆盖列表类型 #OK //bool(true)
+$redis->type('greet_list');#string //int(1)
+
+####SETNX  SETNX是”SET if Not eXists”(如果不存在，则SET)的简写。 锁算法有一个问题
+
+$redis->EXISTS('job');  # job不存在 //bool(false);
+$redis->SETNX('job', "programmer");  # job设置成功 //bool(true)
+
+####SETEX SETEX key seconds value ,key已经存在，key被覆写
+
+$redis->SETEX('cache_user_id', 60,10086);//bool(true)
+
+####SETRANGE 从偏移量offset开始修改
+
+$redis->SET('greeting', "hello world");
+$redis->SETRANGE('greeting', 6, "Redis"); //int(11)
+$redis->GET('greeting');//"hello Redis
+
+
+####MSET 会覆盖旧值
+
+$array_mset=array('date'=>'2012.3.5',
+        'time'=>'9.09a.m.',
+        'weather'=>'sunny'
+        );
+$redis->MSET($array_mset); //bool(true)
+
+####MSETNX 对不存在的key设置
+
+$array_mset=array('rmdbs'=>'MySQL',
+        'nosql'=>'MongoDB',
+        'key-value-store'=>'redis'
+        );
+$redis->MSETNX($array_mset);//bool(true)
+
+####APPEND 
+//如果key已经存在并且是一个字符串，APPEND命令将value追加到key原来的值之后。
+//如果key不存在，APPEND就简单地将给定key设为value，就像执行SET key value一样。
+
+$redis->EXISTS('myphone');  # 确保myphone不存在 //bool(false)
+$redis->APPEND('myphone',"nokia");  # 对不存在的key进行APPEND，等同于SET myphone "nokia" //int(5) # 字符长度
+
+####GET
+var_dump($redis->GET('fake_key')); #(nil) //return bool(false)
+$redis->SET('animate', "anohana"); //return bool(true)
+var_dump($redis->GET('animate')); //return string(7) "anohana"
+
+####MGET
+
+$redis_mget_data_array=array('name'=>'ikodota','blog'=>'cnblogs.com/ikodota');
+$redis->MSET($redis_mget_data_array);#用MSET一次储存多个值 
+
+$redis_mget_key_array=array('name','blog');
+var_dump($redis->MGET($redis_mget_key_array)); //array(2) { [0]=> string(7) "ikodota" [1]=> string(19) "cnblogs.com/ikodota" }
+
+####GETRANGE 字符串截取
+
+// 返回key中字符串值的子字符串，字符串的截取范围由start和end两个偏移量决定(包括start和end在内)。
+// 负数偏移量表示从字符串最后开始计数，-1表示最后一个字符，-2表示倒数第二个，以此类推。
+
+$redis->SET('greeting', "hello, my friend");
+echo $redis->GETRANGE('greeting', 0, 4).'<br>';  # 返回索引0-4的字符，包括4。 //"hello"
+echo $redis->GETRANGE('greeting', -1 ,-5).'<br>';  # 不支持回绕操作  //""
+echo $redis->GETRANGE('greeting', -3 ,-1).'<br>';  # 负数索引 //"end"
+echo $redis->GETRANGE('greeting', 0, -1).'<br>';  # 从第一个到最后一个 //"hello, my friend"
+echo $redis->GETRANGE('greeting', 0, 1008611).'<br>';  # 值域范围不超过实际字符串，超过部分自动被符略 //"hello, my friend"
+
+####GETSET
+// 将给定key的值设为value，并返回key的旧值。
+// 当key存在但不是字符串类型时，返回一个错误。 当key没有旧值时，返回nil。
+
+
+var_dump($redis->EXISTS('mail'));//return bool(false);
+var_dump($redis->GETSET('mail','xxx@google.com'));  # 因为mail之前不存在，没有旧值，返回nil ,#(nil)   //bool(false)
+
+####STRLEN
+
+// 返回key所储存的字符串值的长度。
+// 当key储存的不是字符串值时，返回一个错误。
+
+$redis->SET('mykey', "Hello world");
+echo $redis->STRLEN('mykey'); //int(11)
+echo $redis->STRLEN('nonexisting'); # 不存在的key长度视为0  //int(0)
+
+
+####INCR 增加
+
+$redis->SET('page_view', 20);
+var_dump($redis->INCR('page_view')); //int(21) 
+
+####INCRBY 增加一定的值
+
+# 情况1：key存在且是数字值
+$redis->SET('rank', 50);  # 设置rank为50
+$redis->INCRBY('rank', 20);  # 给rank加上20
+var_dump($redis->GET('rank')); #"70"   //string(2) "70"
+
+# 情况2：key不存在
+$redis->EXISTS('counter'); //bool(false)
+$redis->INCRBY('counter'); #int 30  //bool(false)
+var_dump($redis->GET('counter')); #30 //经测试 与手册上结果不一样，不能直接从bool型转为int型。 return bool(false) 
+
+# 情况3：key不是数字值
+$redis->SET('book', "long long ago...");
+var_dump($redis->INCRBY('book', 200)); #(error) ERR value is not an integer or out of range   // bool(false)
+
+####DECR 
+
+$redis->SET('failure_times', 10);
+$redis->DECR('failure_times'); //int(9)
+
+####DECRBY
+$redis->SET('count', 100);
+var_dump($redis->DECRBY('count', 20)); //int(80)
+var_dump($redis->GET('count'));  //string(2) "80"
+
+####setbit
+
+echo '<br><br>SETBIT<br>';
+$bit_val=67;
+echo decbin($bit_val).'<br>'; //1000011
+var_dump($redis->SETBIT('bit',1,1));//int(0)  空位上都是0
+var_dump($redis->SETBIT('bit',2,0));//int(0)
+var_dump($redis->SETBIT('bit',3,0));//int(0)
+var_dump($redis->SETBIT('bit',4,0));//int(0)
+var_dump($redis->SETBIT('bit',5,0));//int(0)
+var_dump($redis->SETBIT('bit',6,1));//int(0)
+var_dump($redis->SETBIT('bit',7,1));//int(0)
+
+var_dump($redis->GET('bit')); //string(1) "C" ,二进制为：1000011 ,ASCII:67
+
+var_dump($redis->GETBIT('bit', 6 )); //int(1)  取出第6位（从左到右）为“1”
+
+var_dump($redis->SETBIT('bit',5,1));//int(0)  把第5位的0改为1
+var_dump($redis->SETBIT('bit',6,0));//int(1)  把第6位的1改为0
+
+var_dump($redis->GET('bit')); //string(1) "E ,二进制为：1000101,ASCII:69l
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+function dump($var){
+	echo "<pre>";
+	var_dump($var);
+	echo "</pre>";
+}
